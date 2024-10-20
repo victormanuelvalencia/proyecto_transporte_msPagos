@@ -13,7 +13,7 @@ app = Flask(__name__)
 epayco = Epayco({
     'apiKey': os.getenv('EPAYCO_PUBLIC_KEY'),
     'privateKey': os.getenv('EPAYCO_PRIVATE_KEY'),
-    'lenguaje': 'ES',
+    'lenguage': 'ES',
     'test': os.getenv('EPAYCO_TEST') == 'true' # Se define si es modo de prueba o producción
 })
 
@@ -46,3 +46,67 @@ def create_customer(token, data):
         return customer
     except Exception as e:
         return {'error': str(e)}
+
+# Método para procesar el pago
+def process_payment(data,  customer_id, token_card):
+    try:
+        # Configurar la información del pago
+        payment_info = {
+            'token_card': token_card,
+            'customer_id': customer_id,
+            'doc_type': 'CC',
+            'doc_number': data['doc_number'],
+            'name': data['name'],
+            'last_name': data['last_name'],
+            'email': data['email'],
+            'city': data['city'],
+            'address': data['address'],
+            'phone': data['phone'],
+            'cell_phone': data['cell_phone'],
+            'bill': data['bill'],
+            'description': 'Pago de servicios',
+            'value': data['value'],
+            'tax': '0',
+            'tax_base': data['value'],
+            'currency': 'COP'
+        }
+        response = epayco.charge.create(payment_info)
+        return response
+    except Exception as e:
+        return {'error': str(e)}
+
+# End point para manejar el pago
+@app.route('/process-payment', methods=['POST'])
+def handle_process_payment():
+    data = request.json
+
+    # Crear el token de la tarjeta
+    token_response = create_token(data)
+    print("Token response", json.dumps(token_response))
+
+    # Verificar si hubo un error al tocar el token
+    if token_response["status"] is False:
+        return jsonify(token_response), 500
+
+    token_card = token_response["id"] # Extraer el ID del token
+
+    # Crear el cliente
+    customer_response = create_customer(token_card, data)
+    print("Customer response", json.dumps(customer_response))
+
+    # Verificar si hubo error al crear el cliente
+    if 'error' in customer_response:
+        return jsonify(customer_response), 500
+
+    # Procesar el pago
+    payment_response = process_payment(data, "customer_id", token_card)
+    print("Payment response", json.dumps(payment_response))
+
+    # Verificar si hubo error al procesar el pago
+    if 'error' in payment_response:
+        return jsonify(payment_response), 500
+
+    return jsonify(payment_response), 200
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5001)
